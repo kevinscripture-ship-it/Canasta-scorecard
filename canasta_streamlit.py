@@ -7,15 +7,23 @@ import time
 st.set_page_config(page_title="Canasta Scorekeeper", layout="wide", initial_sidebar_state="expanded")
 
 # Firebase setup (test mode, no auth)
-FIREBASE_URL = 'https://canastakeeper-b0cf4-default-rtdb.firebaseio.com/'  # Replace with your URL from Step 1 (e.g., https://canastascore-default-rtdb.firebaseio.com/)
+FIREBASE_URL = 'https://canastakeeper-b0cf4-default-rtdb.firebaseio.com/'  # Your Firebase URL
+
+# Initialize session state
+if 'game_id' not in st.session_state:
+    st.session_state.game_id = None
+if 'auto_refresh' not in st.session_state:
+    st.session_state.auto_refresh = False
 
 # Sidebar
 st.sidebar.header("Shared Game Setup")
-game_id = st.sidebar.text_input("Game ID (e.g., game-101225)", key="game_id")
+game_id_input = st.sidebar.text_input("Game ID (e.g., game-101225)", key="game_id_input")
+auto_refresh = st.sidebar.checkbox("Auto-refresh every 10s?", value=st.session_state.auto_refresh)
 if st.sidebar.button("Create/Join Game"):
-    st.session_state.game_id = game_id
-    st.session_state.auto_refresh = st.sidebar.checkbox("Auto-refresh every 10s?", value=False)
-    st.rerun()
+    if game_id_input:
+        st.session_state.game_id = game_id_input
+        st.session_state.auto_refresh = auto_refresh
+        st.rerun()
 
 # Team setup (4-player, 2 teams)
 team1 = st.sidebar.text_input("Team 1 Name", value="Team 1")
@@ -29,22 +37,29 @@ players = [
 
 game_target = 5000
 
-# Helper functions for Firebase (no auth)
+# Helper functions for Firebase
 def get_firebase_data(path):
     try:
         response = requests.get(f"{FIREBASE_URL}{path}.json")
-        return response.json() or {}
-    except:
+        if response.status_code == 200:
+            return response.json() or {}
+        else:
+            st.error("Failed to fetch data from Firebase. Check internet or Game ID.")
+            return {}
+    except Exception as e:
+        st.error(f"Error connecting to Firebase: {str(e)}")
         return {}
 
 def update_firebase_data(path, data):
     try:
-        requests.put(f"{FIREBASE_URL}{path}.json", json=data)
-    except:
-        st.error("Error updating scores. Check internet or Game ID.")
+        response = requests.put(f"{FIREBASE_URL}{path}.json", json=data)
+        if response.status_code != 200:
+            st.error("Failed to update Firebase. Check internet or Game ID.")
+    except Exception as e:
+        st.error(f"Error updating Firebase: {str(e)}")
 
 # Main app
-if 'game_id' in st.session_state:
+if st.session_state.game_id:
     game_path = st.session_state.game_id.replace('/', '-')  # Sanitize for Firebase
     game_data = get_firebase_data(game_path)
     
@@ -63,7 +78,7 @@ if 'game_id' in st.session_state:
     })
     
     st.title("🃏 Shared Canasta Scorekeeper")
-    st.info(f"🔗 Game ID: {game_id} | Share URL + ID with players. Refresh to see updates!")
+    st.info(f"🔗 Game ID: {st.session_state.game_id} | Share URL + ID with players. Refresh to see updates!")
     
     col1, col2 = st.columns(2)
     with col1:
@@ -72,11 +87,11 @@ if 'game_id' in st.session_state:
             st.cache_data.clear()
             st.rerun()
     with col2:
-        st.metric(f"{team1} Score", scores[team1])
-        st.metric(f"{team2} Score", scores[team2])
+        st.metric(f"{team1} Score", scores.get(team1, 0))
+        st.metric(f"{team2} Score", scores.get(team2, 0))
     
-    # Auto-refresh (optional)
-    if st.session_state.get('auto_refresh', False):
+    # Auto-refresh
+    if st.session_state.auto_refresh:
         time.sleep(10)
         st.rerun()
     
@@ -120,8 +135,8 @@ if 'game_id' in st.session_state:
             t1_round = meld1 + t1_can_bonus + t1_red_bonus + t1_go - penalty1
             t2_round = meld2 + t2_can_bonus + t2_red_bonus + t2_go - penalty2
             
-            scores[team1] += t1_round
-            scores[team2] += t2_round
+            scores[team1] = scores.get(team1, 0) + t1_round
+            scores[team2] = scores.get(team2, 0) + t2_round
             
             new_history = history + [{
                 'Round': len(history) + 1,
@@ -133,7 +148,7 @@ if 'game_id' in st.session_state:
             update_firebase_data(game_path, {
                 'scores': scores,
                 'history': new_history,
-                'dealer_index': (dealer_index + 1) % 4,
+                'dealer Miglioramenti suggeriti dealer_index': (dealer_index + 1) % 4,
                 'players': players,
                 'team_names': [team1, team2]
             })
@@ -146,10 +161,10 @@ if 'game_id' in st.session_state:
         df = pd.DataFrame(history)
         st.dataframe(df, use_container_width=True)
     
-    if max(scores.values()) >= game_target:
-        winner = team1 if scores[team1] >= scores[team2] else team2
+    if max(scores.get(team1, 0), scores.get(team2, 0)) >= game_target:
+        winner = team1 if scores.get(team1, 0) >= scores.get(team2, 0) else team2
         st.balloons()
-        st.success(f"🎉 {winner} wins with {max(scores.values())} points!")
+        st.success(f"🎉 {winner} wins with {max(scores.get(team1, 0), scores.get(team2, 0))} points!")
         if st.button("New Game"):
             update_firebase_data(game_path, {})
             st.rerun()
