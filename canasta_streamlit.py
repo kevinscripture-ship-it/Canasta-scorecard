@@ -123,38 +123,42 @@ if st.session_state.game_id:
             penalty2 = st.number_input(f"{team2} Penalty (hand cards)", min_value=0, value=0)
         
         if st.button("Tally Round!"):
+            # Check total red threes
             total_red = red1 + red2
-            t1_can_bonus = (nat1 * 500) + (mix1 * 300)
-            t2_can_bonus = (nat2 * 500) + (mix2 * 300)
-            t1_red_bonus = red1 * 100 if total_red != 4 else (800 if red1 == 4 else 0)
-            t2_red_bonus = red2 * 100 if total_red != 4 else (800 if red2 == 4 else 0)
-            go_bonus = 200 if concealed else 100
-            t1_go = go_bonus if went_out == team1 else 0
-            t2_go = go_bonus if went_out == team2 else 0
-            
-            t1_round = meld1 + t1_can_bonus + t1_red_bonus + t1_go - penalty1
-            t2_round = meld2 + t2_can_bonus + t2_red_bonus + t2_go - penalty2
-            
-            scores[team1] = scores.get(team1, 0) + t1_round
-            scores[team2] = scores.get(team2, 0) + t2_round
-            
-            new_history = history + [{
-                'Round': len(history) + 1,
-                team1: t1_round,
-                team2: t2_round,
-                'Dealer': players[dealer_index]
-            }]
-            
-            update_firebase_data(game_path, {
-                'scores': scores,
-                'history': new_history,
-                'dealer Miglioramenti suggeriti dealer_index': (dealer_index + 1) % 4,
-                'players': players,
-                'team_names': [team1, team2]
-            })
-            
-            st.success("Scores updated! Tell others to refresh.")
-            st.rerun()
+            if total_red > 4:
+                st.error("Total red threes cannot exceed 4. Please adjust.")
+            else:
+                t1_can_bonus = (nat1 * 500) + (mix1 * 300)
+                t2_can_bonus = (nat2 * 500) + (mix2 * 300)
+                t1_red_bonus = red1 * 100 if total_red != 4 else (800 if red1 == 4 else 0)
+                t2_red_bonus = red2 * 100 if total_red != 4 else (800 if red2 == 4 else 0)
+                go_bonus = 200 if concealed else 100
+                t1_go = go_bonus if went_out == team1 else 0
+                t2_go = go_bonus if went_out == team2 else 0
+                
+                t1_round = meld1 + t1_can_bonus + t1_red_bonus + t1_go - penalty1
+                t2_round = meld2 + t2_can_bonus + t2_red_bonus + t2_go - penalty2
+                
+                scores[team1] = scores.get(team1, 0) + t1_round
+                scores[team2] = scores.get(team2, 0) + t2_round
+                
+                new_history = history + [{
+                    'Round': len(history) + 1,
+                    team1: t1_round,
+                    team2: t2_round,
+                    'Dealer': players[dealer_index]
+                }]
+                
+                update_firebase_data(game_path, {
+                    'scores': scores,
+                    'history': new_history,
+                    'dealer_index': (dealer_index + 1) % 4,
+                    'players': players,
+                    'team_names': [team1, team2]
+                })
+                
+                st.success("Scores updated! Tell others to refresh.")
+                st.rerun()
     
     if history:
         st.subheader("📊 Shared Round History")
@@ -172,12 +176,16 @@ if st.session_state.game_id:
 else:
     st.warning("Enter a Game ID in the sidebar and click Create/Join.")
 
-# Rules
+# Rules with meld requirements
 with st.expander("ℹ️ Quick Rules Reminder"):
     st.markdown("""
+    - **Minimum Meld to Go Down**:
+      - Start of game: 50 points
+      - Team score 1500+: 90 points
+      - Team score 3000+: 120 points
     - **Meld Points**: Jokers=50, A/2=20, K-8=10, 7-4=5.
     - **Canastas**: Natural=500, Mixed=300.
-    - **Red 3s**: 100 each; 800 if all 4 to one team.
+    - **Red 3s**: 100 each; 800 if all 4 to one team (total red 3s cannot exceed 4).
     - **Going Out**: +100 (or +200 concealed).
     - **Penalties**: Value of unmelded cards.
     Game ends at 5,000 points. Share Game ID to sync scores!
