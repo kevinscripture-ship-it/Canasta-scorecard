@@ -7,7 +7,7 @@ import time
 st.set_page_config(page_title="Canasta Scorekeeper", layout="wide", initial_sidebar_state="expanded")
 
 # Firebase setup (test mode, no auth)
-FIREBASE_URL = 'YOUR_FIREBASE_URL'  # Replace with your URL from Step 1 (e.g., https://canastascore-default-rtdb.firebaseio.com/)
+FIREBASE_URL = https://canastakeeper-b0cf4-default-rtdb.firebaseio.com/  # Replace with your URL from Step 1 (e.g., https://canastascore-default-rtdb.firebaseio.com/)
 
 # Sidebar
 st.sidebar.header("Shared Game Setup")
