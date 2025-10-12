@@ -103,15 +103,15 @@ if st.session_state.game_id:
         with col_a:
             st.subheader(team1)
             meld1 = st.number_input("Meld points", min_value=0, value=0, key="meld1")
-            nat1 = st.slider("Natural Canastas", 0, 5, 0, key="nat1")
-            mix1 = st.slider("Mixed Canastas", 0, 5, 0, key="mix1")
-            red1 = st.slider("Red Threes", 0, 4, 0, key="red1")
+            nat1 = st.selectbox("Natural Canastas", [0, 1, 2, 3, 4, 5], index=0, key="nat1")
+            mix1 = st.selectbox("Mixed Canastas", [0, 1, 2, 3, 4, 5], index=0, key="mix1")
+            red1 = st.selectbox("Red Threes", [0, 1, 2, 3, 4], index=0, key="red1")
         with col_b:
             st.subheader(team2)
             meld2 = st.number_input("Meld points", min_value=0, value=0, key="meld2")
-            nat2 = st.slider("Natural Canastas", 0, 5, 0, key="nat2")
-            mix2 = st.slider("Mixed Canastas", 0, 5, 0, key="mix2")
-            red2 = st.slider("Red Threes", 0, 4, 0, key="red2")
+            nat2 = st.selectbox("Natural Canastas", [0, 1, 2, 3, 4, 5], index=0, key="nat2")
+            mix2 = st.selectbox("Mixed Canastas", [0, 1, 2, 3, 4, 5], index=0, key="mix2")
+            red2 = st.selectbox("Red Threes", [0, 1, 2, 3, 4], index=0, key="red2")
         
         penalty1 = penalty2 = 0
         if went_out == team1:
