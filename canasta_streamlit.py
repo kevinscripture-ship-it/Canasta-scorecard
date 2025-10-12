@@ -164,6 +164,22 @@ if st.session_state.game_id:
         st.subheader("📊 Shared Round History")
         df = pd.DataFrame(history)
         st.dataframe(df, use_container_width=True)
+        if st.button("↩️ Undo Last Round"):
+            if history:
+                last_round = history[-1]
+                scores[team1] = max(0, scores.get(team1, 0) - last_round.get(team1, 0))
+                scores[team2] = max(0, scores.get(team2, 0) - last_round.get(team2, 0))
+                new_history = history[:-1]
+                new_dealer_index = max(0, dealer_index - 1) % 4
+                update_firebase_data(game_path, {
+                    'scores': scores,
+                    'history': new_history,
+                    'dealer_index': new_dealer_index,
+                    'players': players,
+                    'team_names': [team1, team2]
+                })
+                st.success("Last round undone! Tell others to refresh.")
+                st.rerun()
     
     if max(scores.get(team1, 0), scores.get(team2, 0)) >= game_target:
         winner = team1 if scores.get(team1, 0) >= scores.get(team2, 0) else team2
