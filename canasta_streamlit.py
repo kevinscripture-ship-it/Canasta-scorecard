@@ -74,4 +74,102 @@ def render_table(players, dealer_index):
         </div>
         <div style="position: absolute; right: 0; top: 50%; transform: translate(10%, -50%); color: {'red' if dealer_index == 3 else 'black'}; font-weight: {'bold' if dealer_index == 3 else 'normal'};">
             {players[3]} (East) {'⭐' if dealer_index == 3 else ''}
-        </div
+        </div>
+    </div>
+    """
+    st.markdown(html, unsafe_allow_html=True)
+
+# Main logic
+if st.session_state.game_id is None:
+    st.session_state.view = 'setup'  # Force setup if no game ID
+
+if st.session_state.view == 'setup':
+    st.header("Game Setup")
+    render_table(st.session_state.players, 0)  # Preview with Player 1 as example dealer
+    col1, col2 = st.columns([1, 1])
+    with col1:
+        st.session_state.team1 = st.text_input("Team 1 Name", value=st.session_state.team1)
+        st.session_state.players[0] = st.text_input("Player 1 (Team 1, South)", value=st.session_state.players[0])
+        st.session_state.players[2] = st.text_input("Player 3 (Team 1, North)", value=st.session_state.players[2])
+    with col2:
+        st.session_state.team2 = st.text_input("Team 2 Name", value=st.session_state.team2)
+        st.session_state.players[1] = st.text_input("Player 2 (Team 2, West)", value=st.session_state.players[1])
+        st.session_state.players[3] = st.text_input("Player 4 (Team 2, East)", value=st.session_state.players[3])
+    
+    game_id_input = st.text_input("Game ID (e.g., game-101225)")
+    if st.button("Start Game", use_container_width=True):
+        if game_id_input:
+            st.session_state.game_id = game_id_input
+            st.session_state.view = 'summary'
+            st.rerun()
+
+else:
+    game_path = st.session_state.game_id.replace('/', '-')  # Sanitize
+    game_data = get_firebase_data(game_path)
+    
+    # Load data with debug
+    scores = game_data.get('scores', {st.session_state.team1: 0, st.session_state.team2: 0})
+    dealer_index = game_data.get('dealer_index', 0)
+    history = game_data.get('history', [])
+    
+    # Save setup
+    update_firebase_data(game_path, {
+        'scores': {st.session_state.team1: scores.get(st.session_state.team1, 0), st.session_state.team2: scores.get(st.session_state.team2, 0)},
+        'dealer_index': dealer_index,
+        'history': history,
+        'players': st.session_state.players,
+        'team_names': [st.session_state.team1, st.session_state.team2]
+    })
+    
+    # Sidebar for options
+    st.sidebar.header("Options")
+    st.session_state.auto_refresh = st.sidebar.checkbox("Auto-refresh every 10s?", value=st.session_state.auto_refresh)
+    if st.sidebar.button("Edit Setup"):
+        st.session_state.view = 'setup'
+        st.rerun()
+    
+    if st.session_state.view == 'summary':
+        st.header("Game Summary")
+        st.info(f"Game ID: {st.session_state.game_id} | Share with players to sync scores!")
+        render_table(st.session_state.players, dealer_index)
+        
+        # Simplified scores and meld display
+        st.subheader("Team Scores")
+        col_score1, col_score2 = st.columns(2)
+        with col_score1:
+            st.metric(f"{st.session_state.team1} Score", scores.get(st.session_state.team1, 0))
+            st.info(f"Required Meld: {get_required_meld(scores.get(st.session_state.team1, 0))} points")
+        with col_score2:
+            st.metric(f"{st.session_state.team2} Score", scores.get(st.session_state.team2, 0))
+            st.info(f"Required Meld: {get_required_meld(scores.get(st.session_state.team2, 0))} points")
+        
+        # Buttons
+        st.subheader("Actions")
+        col_btn1, col_btn2 = st.columns(2)
+        with col_btn1:
+            if st.button("New Round", use_container_width=True):
+                st.session_state.view = 'round_input'
+                st.rerun()
+        with col_btn2:
+            if st.button("🔄 Refresh Now", use_container_width=True):
+                st.cache_data.clear()
+                st.rerun()
+        
+        # History
+        if history:
+            st.subheader("📊 Shared Round History")
+            df = pd.DataFrame(history)
+            st.dataframe(df, use_container_width=True)
+            if st.button("↩️ Undo Last Round", use_container_width=True):
+                if history:
+                    last_round = history[-1]
+                    scores[st.session_state.team1] = max(0, scores.get(st.session_state.team1, 0) - last_round.get(st.session_state.team1, 0))
+                    scores[st.session_state.team2] = max(0, scores.get(st.session_state.team2, 0) - last_round.get(st.session_state.team2, 0))
+                    new_history = history[:-1]
+                    new_dealer_index = (dealer_index - 1) % 4
+                    update_firebase_data(game_path, {
+                        'scores': scores,
+                        'history': new_history,
+                        'dealer_index': new_dealer_index,
+                        'players': st.session_state.players,
+                        'team_names': [st.session_state.team1, st.session_state.team2
