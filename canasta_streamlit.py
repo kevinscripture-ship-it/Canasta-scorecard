@@ -10,6 +10,9 @@ st.set_page_config(page_title="Canasta Scorekeeper", layout="wide", initial_side
 # Firebase setup (test mode, no auth)
 FIREBASE_URL = 'https://canastakeeper-b0cf4-default-rtdb.firebaseio.com/'  # Your Firebase URL
 
+# Global game target
+game_target = 5000
+
 # Initialize session state
 if 'view' not in st.session_state:
     st.session_state.view = 'setup'  # Start with setup
@@ -24,7 +27,7 @@ if 'team2' not in st.session_state:
 if 'players' not in st.session_state:
     st.session_state.players = ["Player 1", "Player 2", "Player 3", "Player 4"]
 
-# Firebase helpers (same as before)
+# Firebase helpers
 def get_firebase_data(path):
     try:
         response = requests.get(f"{FIREBASE_URL}{path}.json")
@@ -45,7 +48,7 @@ def update_firebase_data(path, data):
     except Exception as e:
         st.error(f"Error updating Firebase: {str(e)}")
 
-# Function to calculate required meld
+# Calculate required meld
 def get_required_meld(score):
     if score < 1500:
         return 50
@@ -54,25 +57,22 @@ def get_required_meld(score):
     else:
         return 120
 
-# Function to render table graphic with players and highlighted dealer
+# Render table graphic with players and highlighted dealer
 def render_table(players, dealer_index):
-    # Card table image URL (from search: simple 4-player table)
     table_image_url = "https://www.wikihow.com/images/thumb/b/b2/Play-Canasta-Step-16-Version-2.jpg/v4-460px-Play-Canasta-Step-16-Version-2.jpg"
-    
-    # HTML for image with overlaid player names (positions: South bottom, West left, North top, East right)
     html = f"""
     <div style="position: relative; width: 100%; max-width: 460px; margin: auto;">
         <img src="{table_image_url}" style="width: 100%; height: auto;">
-        <div style="position: absolute; bottom: 0; left: 50%; transform: translate(-50%, -10%); color: black; font-weight: {'bold' if dealer_index == 0 else 'normal'};">
+        <div style="position: absolute; bottom: 0; left: 50%; transform: translate(-50%, -10%); color: {'red' if dealer_index == 0 else 'black'}; font-weight: {'bold' if dealer_index == 0 else 'normal'};">
             {players[0]} (South) {'⭐' if dealer_index == 0 else ''}
         </div>
-        <div style="position: absolute; left: 0; top: 50%; transform: translate(-10%, -50%); color: black; font-weight: {'bold' if dealer_index == 1 else 'normal'};">
+        <div style="position: absolute; left: 0; top: 50%; transform: translate(-10%, -50%); color: {'red' if dealer_index == 1 else 'black'}; font-weight: {'bold' if dealer_index == 1 else 'normal'};">
             {players[1]} (West) {'⭐' if dealer_index == 1 else ''}
         </div>
-        <div style="position: absolute; top: 0; left: 50%; transform: translate(-50%, -10%); color: black; font-weight: {'bold' if dealer_index == 2 else 'normal'};">
+        <div style="position: absolute; top: 0; left: 50%; transform: translate(-50%, -10%); color: {'red' if dealer_index == 2 else 'black'}; font-weight: {'bold' if dealer_index == 2 else 'normal'};">
             {players[2]} (North) {'⭐' if dealer_index == 2 else ''}
         </div>
-        <div style="position: absolute; right: 0; top: 50%; transform: translate(10%, -50%); color: black; font-weight: {'bold' if dealer_index == 3 else 'normal'};">
+        <div style="position: absolute; right: 0; top: 50%; transform: translate(10%, -50%); color: {'red' if dealer_index == 3 else 'black'}; font-weight: {'bold' if dealer_index == 3 else 'normal'};">
             {players[3]} (East) {'⭐' if dealer_index == 3 else ''}
         </div>
     </div>
@@ -85,19 +85,19 @@ if st.session_state.game_id is None:
 
 if st.session_state.view == 'setup':
     st.header("Game Setup")
-    # Graphic table preview
     render_table(st.session_state.players, 0)  # Preview with Player 1 as example dealer
-    
-    # Inputs
-    st.session_state.team1 = st.text_input("Team 1 Name", value=st.session_state.team1)
-    st.session_state.team2 = st.text_input("Team 2 Name", value=st.session_state.team2)
-    st.session_state.players[0] = st.text_input("Player 1 (Team 1, South)", value=st.session_state.players[0])
-    st.session_state.players[1] = st.text_input("Player 2 (Team 2, West)", value=st.session_state.players[1])
-    st.session_state.players[2] = st.text_input("Player 3 (Team 1, North)", value=st.session_state.players[2])
-    st.session_state.players[3] = st.text_input("Player 4 (Team 2, East)", value=st.session_state.players[3])
+    col1, col2 = st.columns([1, 1])
+    with col1:
+        st.session_state.team1 = st.text_input("Team 1 Name", value=st.session_state.team1)
+        st.session_state.players[0] = st.text_input("Player 1 (Team 1, South)", value=st.session_state.players[0])
+        st.session_state.players[2] = st.text_input("Player 3 (Team 1, North)", value=st.session_state.players[2])
+    with col2:
+        st.session_state.team2 = st.text_input("Team 2 Name", value=st.session_state.team2)
+        st.session_state.players[1] = st.text_input("Player 2 (Team 2, West)", value=st.session_state.players[1])
+        st.session_state.players[3] = st.text_input("Player 4 (Team 2, East)", value=st.session_state.players[3])
     
     game_id_input = st.text_input("Game ID (e.g., game-101225)")
-    if st.button("Start Game"):
+    if st.button("Start Game", use_container_width=True):
         if game_id_input:
             st.session_state.game_id = game_id_input
             st.session_state.view = 'summary'
@@ -112,7 +112,7 @@ else:
     dealer_index = game_data.get('dealer_index', 0)
     history = game_data.get('history', [])
     
-    # Save setup (players/teams may change)
+    # Save setup
     update_firebase_data(game_path, {
         'scores': {st.session_state.team1: scores.get(st.session_state.team1, 0), st.session_state.team2: scores.get(st.session_state.team2, 0)},
         'dealer_index': dealer_index,
@@ -121,7 +121,7 @@ else:
         'team_names': [st.session_state.team1, st.session_state.team2]
     })
     
-    # Sidebar for auto-refresh and setup tweaks
+    # Sidebar for options
     st.sidebar.header("Options")
     st.session_state.auto_refresh = st.sidebar.checkbox("Auto-refresh every 10s?", value=st.session_state.auto_refresh)
     if st.sidebar.button("Edit Setup"):
@@ -130,7 +130,6 @@ else:
     
     if st.session_state.view == 'summary':
         st.header("Game Summary")
-        # Graphic table with highlighted dealer
         render_table(st.session_state.players, dealer_index)
         
         # Scores and required meld
@@ -142,17 +141,23 @@ else:
             st.metric(f"{st.session_state.team2} Score", scores.get(st.session_state.team2, 0))
             st.info(f"Required Meld: {get_required_meld(scores.get(st.session_state.team2, 0))} points")
         
-        # Button to new round
-        if st.button("New Round"):
-            st.session_state.view = 'round_input'
-            st.rerun()
+        # Buttons
+        col_btn1, col_btn2 = st.columns(2)
+        with col_btn1:
+            if st.button("New Round", use_container_width=True):
+                st.session_state.view = 'round_input'
+                st.rerun()
+        with col_btn2:
+            if st.button("🔄 Refresh Now", use_container_width=True):
+                st.cache_data.clear()
+                st.rerun()
         
         # History
         if history:
             st.subheader("📊 Shared Round History")
             df = pd.DataFrame(history)
             st.dataframe(df, use_container_width=True)
-            if st.button("↩️ Undo Last Round"):
+            if st.button("↩️ Undo Last Round", use_container_width=True):
                 if history:
                     last_round = history[-1]
                     scores[st.session_state.team1] = max(0, scores.get(st.session_state.team1, 0) - last_round.get(st.session_state.team1, 0))
@@ -175,8 +180,9 @@ else:
             winner = st.session_state.team1 if scores.get(st.session_state.team1, 0) >= scores.get(st.session_state.team2, 0) else st.session_state.team2
             st.balloons()
             st.success(f"🎉 {winner} wins with {max_score} points!")
-            if st.button("New Game"):
+            if st.button("New Game", use_container_width=True):
                 update_firebase_data(game_path, {})
+                st.session_state.view = 'setup'
                 st.rerun()
     
     elif st.session_state.view == 'round_input':
@@ -207,49 +213,51 @@ else:
             penalty1 = st.number_input(f"{st.session_state.team1} Penalty (hand cards)", min_value=0, value=0)
             penalty2 = st.number_input(f"{st.session_state.team2} Penalty (hand cards)", min_value=0, value=0)
         
-        if st.button("Tally Round!"):
-            total_red = red1 + red2
-            if total_red > 4:
-                st.error("Total red threes cannot exceed 4. Please adjust.")
-            else:
-                t1_can_bonus = (nat1 * 500) + (mix1 * 300)
-                t2_can_bonus = (nat2 * 500) + (mix2 * 300)
-                t1_red_bonus = red1 * 100 if total_red != 4 else (800 if red1 == 4 else 0)
-                t2_red_bonus = red2 * 100 if total_red != 4 else (800 if red2 == 4 else 0)
-                go_bonus = 200 if concealed else 100
-                t1_go = go_bonus if went_out == st.session_state.team1 else 0
-                t2_go = go_bonus if went_out == st.session_state.team2 else 0
-                
-                t1_round = meld1 + t1_can_bonus + t1_red_bonus + t1_go - penalty1
-                t2_round = meld2 + t2_can_bonus + t2_red_bonus + t2_go - penalty2
-                
-                scores[st.session_state.team1] = scores.get(st.session_state.team1, 0) + t1_round
-                scores[st.session_state.team2] = scores.get(st.session_state.team2, 0) + t2_round
-                
-                new_history = history + [{
-                    'Round': len(history) + 1,
-                    st.session_state.team1: t1_round,
-                    st.session_state.team2: t2_round,
-                    'Dealer': players[dealer_index]
-                }]
-                
-                update_firebase_data(game_path, {
-                    'scores': scores,
-                    'history': new_history,
-                    'dealer_index': (dealer_index + 1) % 4,
-                    'players': st.session_state.players,
-                    'team_names': [st.session_state.team1, st.session_state.team2]
-                })
-                
-                st.success("Scores updated! Tell others to refresh.")
+        col_btn1, col_btn2 = st.columns(2)
+        with col_btn1:
+            if st.button("Tally Round!", use_container_width=True):
+                total_red = red1 + red2
+                if total_red > 4:
+                    st.error("Total red threes cannot exceed 4. Please adjust.")
+                else:
+                    t1_can_bonus = (nat1 * 500) + (mix1 * 300)
+                    t2_can_bonus = (nat2 * 500) + (mix2 * 300)
+                    t1_red_bonus = red1 * 100 if total_red != 4 else (800 if red1 == 4 else 0)
+                    t2_red_bonus = red2 * 100 if total_red != 4 else (800 if red2 == 4 else 0)
+                    go_bonus = 200 if concealed else 100
+                    t1_go = go_bonus if went_out == st.session_state.team1 else 0
+                    t2_go = go_bonus if went_out == st.session_state.team2 else 0
+                    
+                    t1_round = meld1 + t1_can_bonus + t1_red_bonus + t1_go - penalty1
+                    t2_round = meld2 + t2_can_bonus + t2_red_bonus + t2_go - penalty2
+                    
+                    scores[st.session_state.team1] = scores.get(st.session_state.team1, 0) + t1_round
+                    scores[st.session_state.team2] = scores.get(st.session_state.team2, 0) + t2_round
+                    
+                    new_history = history + [{
+                        'Round': len(history) + 1,
+                        st.session_state.team1: t1_round,
+                        st.session_state.team2: t2_round,
+                        'Dealer': st.session_state.players[dealer_index]
+                    }]
+                    
+                    update_firebase_data(game_path, {
+                        'scores': scores,
+                        'history': new_history,
+                        'dealer_index': (dealer_index + 1) % 4,
+                        'players': st.session_state.players,
+                        'team_names': [st.session_state.team1, st.session_state.team2]
+                    })
+                    
+                    st.success("Scores updated! Tell others to refresh.")
+                    st.session_state.view = 'summary'
+                    st.rerun()
+        with col_btn2:
+            if st.button("Cancel", use_container_width=True):
                 st.session_state.view = 'summary'
                 st.rerun()
-        
-        if st.button("Cancel"):
-            st.session_state.view = 'summary'
-            st.rerun()
 
-# Rules (same as before)
+# Rules
 with st.expander("ℹ️ Quick Rules Reminder"):
     st.markdown("""
     - **Minimum Meld to Go Down**:
