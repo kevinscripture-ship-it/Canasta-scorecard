@@ -172,4 +172,35 @@ else:
                         'history': new_history,
                         'dealer_index': new_dealer_index,
                         'players': st.session_state.players,
-                        'team_names': [st.session_state.team1, st.session_state.team2
+                        'team_names': [st.session_state.team1, st.session_state.team2]
+                    })
+                    st.success("Last round undone! Tell others to refresh.")
+                    st.rerun()
+        
+        # Win check
+        max_score = max(scores.get(st.session_state.team1, 0), scores.get(st.session_state.team2, 0))
+        if max_score >= game_target:
+            winner = st.session_state.team1 if scores.get(st.session_state.team1, 0) >= scores.get(st.session_state.team2, 0) else st.session_state.team2
+            st.balloons()
+            st.success(f"🎉 {winner} wins with {max_score} points!")
+            if st.button("New Game", use_container_width=True):
+                update_firebase_data(game_path, {})
+                st.session_state.view = 'setup'
+                st.rerun()
+    
+    elif st.session_state.view == 'round_input':
+        st.header("Enter Round Details")
+        went_out = st.selectbox("Which team went out?", ['None', st.session_state.team1, st.session_state.team2])
+        concealed = st.checkbox("Concealed hand? (+200 bonus)")
+        
+        col_a, col_b = st.columns(2)
+        with col_a:
+            st.subheader(st.session_state.team1)
+            meld1 = st.number_input("Meld points", min_value=0, value=0, key="meld1")
+            nat1 = st.selectbox("Natural Canastas", [0, 1, 2, 3, 4, 5], index=0, key="nat1")
+            mix1 = st.selectbox("Mixed Canastas", [0, 1, 2, 3, 4, 5], index=0, key="mix1")
+            red1 = st.selectbox("Red Threes (bonus cards)", [0, 1, 2, 3, 4], index=0, key="red1")
+        with col_b:
+            st.subheader(st.session_state.team2)
+            meld2 = st.number_input("Meld points", min_value=0, value=0, key="meld2")
+            nat2 = st.selectbox("Natural Canastas
