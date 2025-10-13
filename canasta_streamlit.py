@@ -2,42 +2,29 @@ import streamlit as st
 import requests
 import pandas as pd
 import time
+import base64  # For embedding images if needed
 
-# Page config
-st.set_page_config(page_title="Canasta Scorekeeper", layout="wide", initial_sidebar_state="expanded")
+# Page config for mobile-friendliness
+st.set_page_config(page_title="Canasta Scorekeeper", layout="wide", initial_sidebar_state="collapsed")
 
 # Firebase setup (test mode, no auth)
 FIREBASE_URL = 'https://canastakeeper-b0cf4-default-rtdb.firebaseio.com/'  # Your Firebase URL
 
 # Initialize session state
+if 'view' not in st.session_state:
+    st.session_state.view = 'setup'  # Start with setup
 if 'game_id' not in st.session_state:
     st.session_state.game_id = None
 if 'auto_refresh' not in st.session_state:
     st.session_state.auto_refresh = False
+if 'team1' not in st.session_state:
+    st.session_state.team1 = "Team 1"
+if 'team2' not in st.session_state:
+    st.session_state.team2 = "Team 2"
+if 'players' not in st.session_state:
+    st.session_state.players = ["Player 1", "Player 2", "Player 3", "Player 4"]
 
-# Sidebar
-st.sidebar.header("Shared Game Setup")
-game_id_input = st.sidebar.text_input("Game ID (e.g., game-101225)", key="game_id_input")
-auto_refresh = st.sidebar.checkbox("Auto-refresh every 10s?", value=st.session_state.auto_refresh)
-if st.sidebar.button("Create/Join Game"):
-    if game_id_input:
-        st.session_state.game_id = game_id_input
-        st.session_state.auto_refresh = auto_refresh
-        st.rerun()
-
-# Team setup (4-player, 2 teams)
-team1 = st.sidebar.text_input("Team 1 Name", value="Team 1")
-team2 = st.sidebar.text_input("Team 2 Name", value="Team 2")
-players = [
-    st.sidebar.text_input("Player 1 (Team 1)", value="Player 1"),
-    st.sidebar.text_input("Player 2 (Team 2)", value="Player 2"),
-    st.sidebar.text_input("Player 3 (Team 1)", value="Player 3"),
-    st.sidebar.text_input("Player 4 (Team 2)", value="Player 4")
-]
-
-game_target = 5000
-
-# Helper functions for Firebase
+# Firebase helpers (same as before)
 def get_firebase_data(path):
     try:
         response = requests.get(f"{FIREBASE_URL}{path}.json")
@@ -58,72 +45,169 @@ def update_firebase_data(path, data):
     except Exception as e:
         st.error(f"Error updating Firebase: {str(e)}")
 
-# Main app
-if st.session_state.game_id:
-    game_path = st.session_state.game_id.replace('/', '-')  # Sanitize for Firebase
+# Function to calculate required meld
+def get_required_meld(score):
+    if score < 1500:
+        return 50
+    elif score < 3000:
+        return 90
+    else:
+        return 120
+
+# Function to render table graphic with players and highlighted dealer
+def render_table(players, dealer_index):
+    # Card table image URL (from search: simple 4-player table)
+    table_image_url = "https://www.wikihow.com/images/thumb/b/b2/Play-Canasta-Step-16-Version-2.jpg/v4-460px-Play-Canasta-Step-16-Version-2.jpg"
+    
+    # HTML for image with overlaid player names (positions: South bottom, West left, North top, East right)
+    html = f"""
+    <div style="position: relative; width: 100%; max-width: 460px; margin: auto;">
+        <img src="{table_image_url}" style="width: 100%; height: auto;">
+        <div style="position: absolute; bottom: 0; left: 50%; transform: translate(-50%, -10%); color: black; font-weight: {'bold' if dealer_index == 0 else 'normal'};">
+            {players[0]} (South) {'⭐' if dealer_index == 0 else ''}
+        </div>
+        <div style="position: absolute; left: 0; top: 50%; transform: translate(-10%, -50%); color: black; font-weight: {'bold' if dealer_index == 1 else 'normal'};">
+            {players[1]} (West) {'⭐' if dealer_index == 1 else ''}
+        </div>
+        <div style="position: absolute; top: 0; left: 50%; transform: translate(-50%, -10%); color: black; font-weight: {'bold' if dealer_index == 2 else 'normal'};">
+            {players[2]} (North) {'⭐' if dealer_index == 2 else ''}
+        </div>
+        <div style="position: absolute; right: 0; top: 50%; transform: translate(10%, -50%); color: black; font-weight: {'bold' if dealer_index == 3 else 'normal'};">
+            {players[3]} (East) {'⭐' if dealer_index == 3 else ''}
+        </div>
+    </div>
+    """
+    st.markdown(html, unsafe_allow_html=True)
+
+# Main logic
+if st.session_state.game_id is None:
+    st.session_state.view = 'setup'  # Force setup if no game ID
+
+if st.session_state.view == 'setup':
+    st.header("Game Setup")
+    # Graphic table preview
+    render_table(st.session_state.players, 0)  # Preview with Player 1 as example dealer
+    
+    # Inputs
+    st.session_state.team1 = st.text_input("Team 1 Name", value=st.session_state.team1)
+    st.session_state.team2 = st.text_input("Team 2 Name", value=st.session_state.team2)
+    st.session_state.players[0] = st.text_input("Player 1 (Team 1, South)", value=st.session_state.players[0])
+    st.session_state.players[1] = st.text_input("Player 2 (Team 2, West)", value=st.session_state.players[1])
+    st.session_state.players[2] = st.text_input("Player 3 (Team 1, North)", value=st.session_state.players[2])
+    st.session_state.players[3] = st.text_input("Player 4 (Team 2, East)", value=st.session_state.players[3])
+    
+    game_id_input = st.text_input("Game ID (e.g., game-101225)")
+    if st.button("Start Game"):
+        if game_id_input:
+            st.session_state.game_id = game_id_input
+            st.session_state.view = 'summary'
+            st.rerun()
+
+else:
+    game_path = st.session_state.game_id.replace('/', '-')  # Sanitize
     game_data = get_firebase_data(game_path)
     
-    # Initialize or load data
-    scores = game_data.get('scores', {team1: 0, team2: 0})
+    # Load data
+    scores = game_data.get('scores', {st.session_state.team1: 0, st.session_state.team2: 0})
     dealer_index = game_data.get('dealer_index', 0)
     history = game_data.get('history', [])
     
-    # Save setup
+    # Save setup (players/teams may change)
     update_firebase_data(game_path, {
-        'scores': {team1: scores.get(team1, 0), team2: scores.get(team2, 0)},
+        'scores': {st.session_state.team1: scores.get(st.session_state.team1, 0), st.session_state.team2: scores.get(st.session_state.team2, 0)},
         'dealer_index': dealer_index,
         'history': history,
-        'players': players,
-        'team_names': [team1, team2]
+        'players': st.session_state.players,
+        'team_names': [st.session_state.team1, st.session_state.team2]
     })
     
-    st.title("🃏 Shared Canasta Scorekeeper")
-    st.info(f"🔗 Game ID: {st.session_state.game_id} | Share URL + ID with players. Refresh to see updates!")
-    
-    col1, col2 = st.columns(2)
-    with col1:
-        st.metric("Current Dealer", players[dealer_index])
-        if st.button("🔄 Refresh Now"):
-            st.cache_data.clear()
-            st.rerun()
-    with col2:
-        st.metric(f"{team1} Score", scores.get(team1, 0))
-        st.metric(f"{team2} Score", scores.get(team2, 0))
-    
-    # Auto-refresh
-    if st.session_state.auto_refresh:
-        time.sleep(10)
+    # Sidebar for auto-refresh and setup tweaks
+    st.sidebar.header("Options")
+    st.session_state.auto_refresh = st.sidebar.checkbox("Auto-refresh every 10s?", value=st.session_state.auto_refresh)
+    if st.sidebar.button("Edit Setup"):
+        st.session_state.view = 'setup'
         st.rerun()
     
-    with st.expander("🔄 New Round - Enter Details"):
-        went_out = st.selectbox("Which team went out?", ['None', team1, team2])
+    if st.session_state.view == 'summary':
+        st.header("Game Summary")
+        # Graphic table with highlighted dealer
+        render_table(st.session_state.players, dealer_index)
+        
+        # Scores and required meld
+        col_score1, col_score2 = st.columns(2)
+        with col_score1:
+            st.metric(f"{st.session_state.team1} Score", scores.get(st.session_state.team1, 0))
+            st.info(f"Required Meld: {get_required_meld(scores.get(st.session_state.team1, 0))} points")
+        with col_score2:
+            st.metric(f"{st.session_state.team2} Score", scores.get(st.session_state.team2, 0))
+            st.info(f"Required Meld: {get_required_meld(scores.get(st.session_state.team2, 0))} points")
+        
+        # Button to new round
+        if st.button("New Round"):
+            st.session_state.view = 'round_input'
+            st.rerun()
+        
+        # History
+        if history:
+            st.subheader("📊 Shared Round History")
+            df = pd.DataFrame(history)
+            st.dataframe(df, use_container_width=True)
+            if st.button("↩️ Undo Last Round"):
+                if history:
+                    last_round = history[-1]
+                    scores[st.session_state.team1] = max(0, scores.get(st.session_state.team1, 0) - last_round.get(st.session_state.team1, 0))
+                    scores[st.session_state.team2] = max(0, scores.get(st.session_state.team2, 0) - last_round.get(st.session_state.team2, 0))
+                    new_history = history[:-1]
+                    new_dealer_index = (dealer_index - 1) % 4
+                    update_firebase_data(game_path, {
+                        'scores': scores,
+                        'history': new_history,
+                        'dealer_index': new_dealer_index,
+                        'players': st.session_state.players,
+                        'team_names': [st.session_state.team1, st.session_state.team2]
+                    })
+                    st.success("Last round undone! Tell others to refresh.")
+                    st.rerun()
+        
+        # Win check
+        max_score = max(scores.get(st.session_state.team1, 0), scores.get(st.session_state.team2, 0))
+        if max_score >= game_target:
+            winner = st.session_state.team1 if scores.get(st.session_state.team1, 0) >= scores.get(st.session_state.team2, 0) else st.session_state.team2
+            st.balloons()
+            st.success(f"🎉 {winner} wins with {max_score} points!")
+            if st.button("New Game"):
+                update_firebase_data(game_path, {})
+                st.rerun()
+    
+    elif st.session_state.view == 'round_input':
+        st.header("Enter Round Details")
+        went_out = st.selectbox("Which team went out?", ['None', st.session_state.team1, st.session_state.team2])
         concealed = st.checkbox("Concealed hand? (+200 bonus)")
         
         col_a, col_b = st.columns(2)
         with col_a:
-            st.subheader(team1)
+            st.subheader(st.session_state.team1)
             meld1 = st.number_input("Meld points", min_value=0, value=0, key="meld1")
             nat1 = st.selectbox("Natural Canastas", [0, 1, 2, 3, 4, 5], index=0, key="nat1")
             mix1 = st.selectbox("Mixed Canastas", [0, 1, 2, 3, 4, 5], index=0, key="mix1")
             red1 = st.selectbox("Red Threes", [0, 1, 2, 3, 4], index=0, key="red1")
         with col_b:
-            st.subheader(team2)
+            st.subheader(st.session_state.team2)
             meld2 = st.number_input("Meld points", min_value=0, value=0, key="meld2")
             nat2 = st.selectbox("Natural Canastas", [0, 1, 2, 3, 4, 5], index=0, key="nat2")
             mix2 = st.selectbox("Mixed Canastas", [0, 1, 2, 3, 4, 5], index=0, key="mix2")
             red2 = st.selectbox("Red Threes", [0, 1, 2, 3, 4], index=0, key="red2")
         
         penalty1 = penalty2 = 0
-        if went_out == team1:
-            penalty2 = st.number_input(f"{team2} Penalty (hand cards)", min_value=0, value=0)
-        elif went_out == team2:
-            penalty1 = st.number_input(f"{team1} Penalty (hand cards)", min_value=0, value=0)
+        if went_out == st.session_state.team1:
+            penalty2 = st.number_input(f"{st.session_state.team2} Penalty (hand cards)", min_value=0, value=0)
+        elif went_out == st.session_state.team2:
+            penalty1 = st.number_input(f"{st.session_state.team1} Penalty (hand cards)", min_value=0, value=0)
         else:
-            penalty1 = st.number_input(f"{team1} Penalty (hand cards)", min_value=0, value=0)
-            penalty2 = st.number_input(f"{team2} Penalty (hand cards)", min_value=0, value=0)
+            penalty1 = st.number_input(f"{st.session_state.team1} Penalty (hand cards)", min_value=0, value=0)
+            penalty2 = st.number_input(f"{st.session_state.team2} Penalty (hand cards)", min_value=0, value=0)
         
         if st.button("Tally Round!"):
-            # Check total red threes
             total_red = red1 + red2
             if total_red > 4:
                 st.error("Total red threes cannot exceed 4. Please adjust.")
@@ -133,19 +217,19 @@ if st.session_state.game_id:
                 t1_red_bonus = red1 * 100 if total_red != 4 else (800 if red1 == 4 else 0)
                 t2_red_bonus = red2 * 100 if total_red != 4 else (800 if red2 == 4 else 0)
                 go_bonus = 200 if concealed else 100
-                t1_go = go_bonus if went_out == team1 else 0
-                t2_go = go_bonus if went_out == team2 else 0
+                t1_go = go_bonus if went_out == st.session_state.team1 else 0
+                t2_go = go_bonus if went_out == st.session_state.team2 else 0
                 
                 t1_round = meld1 + t1_can_bonus + t1_red_bonus + t1_go - penalty1
                 t2_round = meld2 + t2_can_bonus + t2_red_bonus + t2_go - penalty2
                 
-                scores[team1] = scores.get(team1, 0) + t1_round
-                scores[team2] = scores.get(team2, 0) + t2_round
+                scores[st.session_state.team1] = scores.get(st.session_state.team1, 0) + t1_round
+                scores[st.session_state.team2] = scores.get(st.session_state.team2, 0) + t2_round
                 
                 new_history = history + [{
                     'Round': len(history) + 1,
-                    team1: t1_round,
-                    team2: t2_round,
+                    st.session_state.team1: t1_round,
+                    st.session_state.team2: t2_round,
                     'Dealer': players[dealer_index]
                 }]
                 
@@ -153,46 +237,19 @@ if st.session_state.game_id:
                     'scores': scores,
                     'history': new_history,
                     'dealer_index': (dealer_index + 1) % 4,
-                    'players': players,
-                    'team_names': [team1, team2]
+                    'players': st.session_state.players,
+                    'team_names': [st.session_state.team1, st.session_state.team2]
                 })
                 
                 st.success("Scores updated! Tell others to refresh.")
+                st.session_state.view = 'summary'
                 st.rerun()
-    
-    if history:
-        st.subheader("📊 Shared Round History")
-        df = pd.DataFrame(history)
-        st.dataframe(df, use_container_width=True)
-        if st.button("↩️ Undo Last Round"):
-            if history:
-                last_round = history[-1]
-                scores[team1] = max(0, scores.get(team1, 0) - last_round.get(team1, 0))
-                scores[team2] = max(0, scores.get(team2, 0) - last_round.get(team2, 0))
-                new_history = history[:-1]
-                new_dealer_index = max(0, dealer_index - 1) % 4
-                update_firebase_data(game_path, {
-                    'scores': scores,
-                    'history': new_history,
-                    'dealer_index': new_dealer_index,
-                    'players': players,
-                    'team_names': [team1, team2]
-                })
-                st.success("Last round undone! Tell others to refresh.")
-                st.rerun()
-    
-    if max(scores.get(team1, 0), scores.get(team2, 0)) >= game_target:
-        winner = team1 if scores.get(team1, 0) >= scores.get(team2, 0) else team2
-        st.balloons()
-        st.success(f"🎉 {winner} wins with {max(scores.get(team1, 0), scores.get(team2, 0))} points!")
-        if st.button("New Game"):
-            update_firebase_data(game_path, {})
+        
+        if st.button("Cancel"):
+            st.session_state.view = 'summary'
             st.rerun()
 
-else:
-    st.warning("Enter a Game ID in the sidebar and click Create/Join.")
-
-# Rules with meld requirements
+# Rules (same as before)
 with st.expander("ℹ️ Quick Rules Reminder"):
     st.markdown("""
     - **Minimum Meld to Go Down**:
