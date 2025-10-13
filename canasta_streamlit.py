@@ -46,25 +46,4 @@ def update_firebase_data(path, data):
         if response.status_code != 200:
             st.error("Failed to update Firebase. Check internet or Game ID.")
     except Exception as e:
-        st.error(f"Error updating Firebase: {str(e)}")
-
-# Calculate required meld
-def get_required_meld(score):
-    if score < 1500:
-        return 50
-    elif score < 3000:
-        return 90
-    else:
-        return 120
-
-# Render table graphic with players and highlighted dealer
-def render_table(players, dealer_index):
-    table_image_url = "https://www.wikihow.com/images/thumb/b/b2/Play-Canasta-Step-16-Version-2.jpg/v4-460px-Play-Canasta-Step-16-Version-2.jpg"
-    html = f"""
-    <div style="position: relative; width: 100%; max-width: 460px; margin: auto;">
-        <img src="{table_image_url}" style="width: 100%; height: auto;">
-        <div style="position: absolute; bottom: 0; left: 50%; transform: translate(-50%, -10%); color: {'red' if dealer_index == 0 else 'black'}; font-weight: {'bold' if dealer_index == 0 else 'normal'};">
-            {players[0]} (South) {'⭐' if dealer_index == 0 else ''}
-        </div>
-        <div style="position: absolute; left: 0; top: 50%; transform: translate(-10%, -50%); color: {'red' if dealer_index == 1 else 'black'}; font-weight: {'bold' if dealer_index == 1 else 'normal'};">
-            {players[1]} (West
+        st.error(f"Error updating Firebase:
