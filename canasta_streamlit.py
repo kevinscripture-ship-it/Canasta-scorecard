@@ -26,6 +26,8 @@ if 'team2' not in st.session_state:
     st.session_state.team2 = "Team 2"
 if 'players' not in st.session_state:
     st.session_state.players = ["Player 1", "Player 2", "Player 3", "Player 4"]
+if 'edit_round' not in st.session_state:
+    st.session_state.edit_round = None  # Track which round is being edited
 
 # Firebase helpers
 def get_firebase_data(path):
@@ -63,7 +65,7 @@ def render_table(players, dealer_index):
     table_image_url = "https://www.wikihow.com/images/thumb/b/b2/Play-Canasta-Step-16-Version-2.jpg/v4-460px-Play-Canasta-Step-16-Version-2.jpg"
     html = f"""
     <div style="position: relative; width: 100%; max-width: 460px; margin: auto;">
-        <img src="{table_image_url}" style="width: 100%; height: auto;">
+        <img src="{table_image_url}" style="width: 100%; height: auto;" loading="lazy">
         <div style="position: absolute; bottom: 0; left: 50%; transform: translate(-50%, -10%); color: {'red' if dealer_index == 0 else 'black'}; font-weight: {'bold' if dealer_index == 0 else 'normal'};">
             {players[0]} (South) {'⭐' if dealer_index == 0 else ''}
         </div>
@@ -150,17 +152,24 @@ else:
         with col_btn1:
             if st.button("New Round", use_container_width=True):
                 st.session_state.view = 'round_input'
+                st.session_state.edit_round = None  # Clear edit mode
                 st.rerun()
         with col_btn2:
             if st.button("🔄 Refresh Now", use_container_width=True):
                 st.cache_data.clear()
                 st.rerun()
         
-        # History
+        # History with edit buttons
         if history:
             st.subheader("📊 Shared Round History")
             df = pd.DataFrame(history)
             st.dataframe(df, use_container_width=True)
+            st.subheader("Edit or Undo Rounds")
+            for i, round_data in enumerate(history):
+                if st.button(f"Edit Round {round_data['Round']}", key=f"edit_{i}", use_container_width=True):
+                    st.session_state.view = 'round_input'
+                    st.session_state.edit_round = i  # Store the index of the round to edit
+                    st.rerun()
             if st.button("↩️ Undo Last Round", use_container_width=True):
                 if history:
                     last_round = history[-1]
@@ -187,40 +196,68 @@ else:
             if st.button("New Game", use_container_width=True):
                 update_firebase_data(game_path, {})
                 st.session_state.view = 'setup'
+                st.session_state.edit_round = None
                 st.rerun()
     
     elif st.session_state.view == 'round_input':
-        st.header("Enter Round Details")
-        went_out = st.selectbox("Which team went out?", ['None', st.session_state.team1, st.session_state.team2])
-        concealed = st.checkbox("Concealed hand? (+200 bonus)")
-        dealing_bonus = st.checkbox("Dealing Bonus? (+100 points)")
+        is_edit_mode = st.session_state.edit_round is not None
+        round_num = history[st.session_state.edit_round]['Round'] if is_edit_mode else len(history) + 1
+        st.header(f"{'Edit Round' if is_edit_mode else 'Enter Round'} {round_num} Details")
+        
+        # Load existing round data if editing
+        if is_edit_mode:
+            round_data = history[st.session_state.edit_round]
+            default_t1_score = round_data.get(st.session_state.team1, 0)
+            default_t2_score = round_data.get(st.session_state.team2, 0)
+            # Estimate inputs based on typical scoring (simplified, as exact inputs aren't stored)
+            default_went_out = 'None'
+            default_concealed = False
+            default_dealing_bonus = False
+            default_meld1 = default_meld2 = 0
+            default_nat1 = default_nat2 = 0
+            default_mix1 = default_mix2 = 0
+            default_red1 = default_red2 = 0
+            default_penalty1 = default_penalty2 = 0
+        else:
+            default_went_out = 'None'
+            default_concealed = False
+            default_dealing_bonus = False
+            default_meld1 = default_meld2 = 0
+            default_nat1 = default_nat2 = 0
+            default_mix1 = default_mix2 = 0
+            default_red1 = default_red2 = 0
+            default_penalty1 = default_penalty2 = 0
+        
+        went_out = st.selectbox("Which team went out?", ['None', st.session_state.team1, st.session_state.team2], index=['None', st.session_state.team1, st.session_state.team2].index(default_went_out))
+        concealed = st.checkbox("Concealed hand? (+200 bonus)", value=default_concealed)
+        dealing_bonus = st.checkbox("Dealing Bonus? (+100 points)", value=default_dealing_bonus)
         
         col_a, col_b = st.columns(2)
         with col_a:
             st.subheader(st.session_state.team1)
-            meld1 = st.number_input("Meld points", min_value=0, value=0, key="meld1")
-            nat1 = st.selectbox("Natural Canastas", [0, 1, 2, 3, 4, 5], index=0, key="nat1")
-            mix1 = st.selectbox("Mixed Canastas", [0, 1, 2, 3, 4, 5], index=0, key="mix1")
-            red1 = st.selectbox("Red Threes (bonus cards)", [0, 1, 2, 3, 4], index=0, key="red1")
+            meld1 = st.number_input("Meld points", min_value=0, value=default_meld1, key="meld1")
+            nat1 = st.selectbox("Natural Canastas", [0, 1, 2, 3, 4, 5], index=default_nat1, key="nat1")
+            mix1 = st.selectbox("Mixed Canastas", [0, 1, 2, 3, 4, 5], index=default_mix1, key="mix1")
+            red1 = st.selectbox("Red Threes (bonus cards)", [0, 1, 2, 3, 4], index=default_red1, key="red1")
         with col_b:
             st.subheader(st.session_state.team2)
-            meld2 = st.number_input("Meld points", min_value=0, value=0, key="meld2")
-            nat2 = st.selectbox("Natural Canastas", [0, 1, 2, 3, 4, 5], index=0, key="nat2")
-            mix2 = st.selectbox("Mixed Canastas", [0, 1, 2, 3, 4, 5], index=0, key="mix2")
-            red2 = st.selectbox("Red Threes (bonus cards)", [0, 1, 2, 3, 4], index=0, key="red2")
+            meld2 = st.number_input("Meld points", min_value=0, value=default_meld2, key="meld2")
+            nat2 = st.selectbox("Natural Canastas", [0, 1, 2, 3, 4, 5], index=default_nat2, key="nat2")
+            mix2 = st.selectbox("Mixed Canastas", [0, 1, 2, 3, 4, 5], index=default_mix2, key="mix2")
+            red2 = st.selectbox("Red Threes (bonus cards)", [0, 1, 2, 3, 4], index=default_red2, key="red2")
         
         penalty1 = penalty2 = 0
         if went_out == st.session_state.team1:
-            penalty2 = st.number_input(f"{st.session_state.team2} Penalty (hand cards)", min_value=0, value=0)
+            penalty2 = st.number_input(f"{st.session_state.team2} Penalty (hand cards)", min_value=0, value=default_penalty2)
         elif went_out == st.session_state.team2:
-            penalty1 = st.number_input(f"{st.session_state.team1} Penalty (hand cards)", min_value=0, value=0)
+            penalty1 = st.number_input(f"{st.session_state.team1} Penalty (hand cards)", min_value=0, value=default_penalty1)
         else:
-            penalty1 = st.number_input(f"{st.session_state.team1} Penalty (hand cards)", min_value=0, value=0)
-            penalty2 = st.number_input(f"{st.session_state.team2} Penalty (hand cards)", min_value=0, value=0)
+            penalty1 = st.number_input(f"{st.session_state.team1} Penalty (hand cards)", min_value=0, value=default_penalty1)
+            penalty2 = st.number_input(f"{st.session_state.team2} Penalty (hand cards)", min_value=0, value=default_penalty2)
         
         col_btn1, col_btn2 = st.columns(2)
         with col_btn1:
-            if st.button("Tally Round!", use_container_width=True):
+            if st.button(f"{'Save Changes' if is_edit_mode else 'Tally Round!'}", use_container_width=True):
                 total_red = red1 + red2
                 if total_red > 4:
                     st.error("Total Red Threes (bonus cards) cannot exceed 4. Please adjust.")
@@ -232,7 +269,6 @@ else:
                     go_bonus = 200 if concealed else 100
                     t1_go = go_bonus if went_out == st.session_state.team1 else 0
                     t2_go = go_bonus if went_out == st.session_state.team2 else 0
-                    # Apply dealing bonus to the dealer's team
                     dealer_team = st.session_state.team1 if dealer_index in [0, 2] else st.session_state.team2
                     deal_bonus = 100 if dealing_bonus else 0
                     t1_deal = deal_bonus if dealer_team == st.session_state.team1 else 0
@@ -241,48 +277,19 @@ else:
                     t1_round = meld1 + t1_can_bonus + t1_red_bonus + t1_go + t1_deal - penalty1
                     t2_round = meld2 + t2_can_bonus + t2_red_bonus + t2_go + t2_deal - penalty2
                     
-                    scores[st.session_state.team1] = scores.get(st.session_state.team1, 0) + t1_round
-                    scores[st.session_state.team2] = scores.get(st.session_state.team2, 0) + t2_round
-                    
-                    new_history = history + [{
-                        'Round': len(history) + 1,
-                        st.session_state.team1: t1_round,
-                        st.session_state.team2: t2_round,
-                        'Dealer': st.session_state.players[dealer_index]
-                    }]
-                    
-                    update_firebase_data(game_path, {
-                        'scores': scores,
-                        'history': new_history,
-                        'dealer_index': (dealer_index + 1) % 4,
-                        'players': st.session_state.players,
-                        'team_names': [st.session_state.team1, st.session_state.team2]
-                    })
-                    
-                    st.success("Scores updated! Tell others to refresh.")
-                    st.session_state.view = 'summary'
-                    st.rerun()
-        with col_btn2:
-            if st.button("Cancel", use_container_width=True):
-                st.session_state.view = 'summary'
-                st.rerun()
-
-# Rules with updated details
-with st.expander("ℹ️ Quick Rules Reminder"):
-    st.markdown("""
-    - **Game Setup**:
-      - Two decks of cards (including jokers) are used.
-      - Each player is dealt 11 cards at the start of a round.
-      - Each player picks up one card per turn.
-    - **Minimum Meld to Go Down**:
-      - Start of game: 50 points
-      - Team score 1500+: 90 points
-      - Team score 3000+: 120 points
-    - **Meld Points**: Jokers=50, A/2=20, K-8=10, 7-4=5.
-    - **Canastas**: Natural=500, Mixed=300.
-    - **Red Threes (bonus cards)**: 100 each; 800 if all 4 to one team (total Red Threes cannot exceed 4).
-    - **Going Out**: +100 (or +200 concealed).
-    - **Dealing Bonus**: +100 points if the dealer picks exactly 11 cards per player.
-    - **Penalties**: Value of unmelded cards.
-    Game ends at 5,000 points. Share Game ID to sync scores!
-    """)
+                    if is_edit_mode:
+                        # Subtract old round scores
+                        old_round = history[st.session_state.edit_round]
+                        scores[st.session_state.team1] = max(0, scores.get(st.session_state.team1, 0) - old_round.get(st.session_state.team1, 0))
+                        scores[st.session_state.team2] = max(0, scores.get(st.session_state.team2, 0) - old_round.get(st.session_state.team2, 0))
+                        # Update history with new round data
+                        history[st.session_state.edit_round] = {
+                            'Round': round_num,
+                            st.session_state.team1: t1_round,
+                            st.session_state.team2: t2_round,
+                            'Dealer': st.session_state.players[dealer_index]
+                        }
+                    else:
+                        # Add new round to history
+                        history.append({
+                            'Round': len(history) +
