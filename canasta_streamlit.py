@@ -29,6 +29,11 @@ if 'players' not in st.session_state:
 if 'edit_round' not in st.session_state:
     st.session_state.edit_round = None  # Track which round is being edited
 
+# Check for read-only mode via URL parameter
+query_params = st.query_params
+is_readonly = query_params.get("view") == "readonly"
+game_id_from_url = query_params.get("game_id")
+
 # Firebase helpers
 def get_firebase_data(path):
     try:
@@ -62,9 +67,9 @@ def get_required_meld(score):
 
 # Render table graphic with players and highlighted dealer
 def render_table(players, dealer_index):
-    table_image_url = "https://www.wikihow.com/images/thumb/b/b2/Play-Canasta-Step-16-Version-2.jpg/v4-460px-Play-Canasta-Step-16-Version-2.jpg"
+    table_image_url = "https://www.wikihow.com/images/thumb/b/b2/Play-Canasta-Step-16-Version-2.jpg/v4-320px-Play-Canasta-Step-16-Version-2.jpg"
     html = f"""
-    <div style="position: relative; width: 100%; max-width: 460px; margin: auto;">
+    <div style="position: relative; width: 100%; max-width: 320px; margin: auto;">
         <img src="{table_image_url}" style="width: 100%; height: auto;" loading="lazy">
         <div style="position: absolute; bottom: 0; left: 50%; transform: translate(-50%, -10%); color: {'red' if dealer_index == 0 else 'black'}; font-weight: {'bold' if dealer_index == 0 else 'normal'};">
             {players[0]} (South) {'⭐' if dealer_index == 0 else ''}
@@ -83,12 +88,19 @@ def render_table(players, dealer_index):
     st.markdown(html, unsafe_allow_html=True)
 
 # Main logic
-if st.session_state.game_id is None:
-    st.session_state.view = 'setup'  # Force setup if no game ID
+if is_readonly:
+    if not game_id_from_url:
+        st.error("No Game ID provided. Please use a URL like: yourapp.streamlit.app?view=readonly&game_id=game-101225")
+    else:
+        st.session_state.game_id = game_id_from_url
+        st.session_state.view = 'summary'
+else:
+    if st.session_state.game_id is None:
+        st.session_state.view = 'setup'
 
-if st.session_state.view == 'setup':
+if st.session_state.view == 'setup' and not is_readonly:
     st.header("Game Setup")
-    render_table(st.session_state.players, 0)  # Preview with Player 1 as example dealer
+    render_table(st.session_state.players, 0)
     col1, col2 = st.columns([1, 1])
     with col1:
         st.session_state.team1 = st.text_input("Team 1 Name", value=st.session_state.team1)
@@ -105,38 +117,30 @@ if st.session_state.view == 'setup':
             st.session_state.game_id = game_id_input
             st.session_state.view = 'summary'
             st.rerun()
+    st.markdown(f"**Share read-only link with others**: {st.session_state.get('app_url', 'yourapp.streamlit.app')}?view=readonly&game_id={game_id_input or 'your-game-id'}")
 
 else:
-    game_path = st.session_state.game_id.replace('/', '-')  # Sanitize
+    game_path = st.session_state.game_id.replace('/', '-')
     game_data = get_firebase_data(game_path)
     
-    # Load data with debug
     scores = game_data.get('scores', {st.session_state.team1: 0, st.session_state.team2: 0})
     dealer_index = game_data.get('dealer_index', 0)
     history = game_data.get('history', [])
     
-    # Save setup
-    update_firebase_data(game_path, {
-        'scores': {st.session_state.team1: scores.get(st.session_state.team1, 0), st.session_state.team2: scores.get(st.session_state.team2, 0)},
-        'dealer_index': dealer_index,
-        'history': history,
-        'players': st.session_state.players,
-        'team_names': [st.session_state.team1, st.session_state.team2]
-    })
-    
-    # Sidebar for options
-    st.sidebar.header("Options")
-    st.session_state.auto_refresh = st.sidebar.checkbox("Auto-refresh every 10s?", value=st.session_state.auto_refresh)
-    if st.sidebar.button("Edit Setup"):
-        st.session_state.view = 'setup'
-        st.rerun()
+    if not is_readonly:
+        update_firebase_data(game_path, {
+            'scores': {st.session_state.team1: scores.get(st.session_state.team1, 0), st.session_state.team2: scores.get(st.session_state.team2, 0)},
+            'dealer_index': dealer_index,
+            'history': history,
+            'players': st.session_state.players,
+            'team_names': [st.session_state.team1, st.session_state.team2]
+        })
     
     if st.session_state.view == 'summary':
-        st.header("Game Summary")
-        st.info(f"Game ID: {st.session_state.game_id} | Share with players to sync scores!")
+        st.header("Game Summary" + (" (Read-Only)" if is_readonly else ""))
+        st.info(f"Game ID: {st.session_state.game_id} | {'Follow along!' if is_readonly else 'Share with players to sync scores!'}")
         render_table(st.session_state.players, dealer_index)
         
-        # Simplified scores and meld display
         st.subheader("Team Scores")
         col_score1, col_score2 = st.columns(2)
         with col_score1:
@@ -146,46 +150,200 @@ else:
             st.metric(f"{st.session_state.team2} Score", scores.get(st.session_state.team2, 0))
             st.info(f"Required Meld: {get_required_meld(scores.get(st.session_state.team2, 0))} points")
         
-        # Buttons
-        st.subheader("Actions")
-        col_btn1, col_btn2 = st.columns(2)
-        with col_btn1:
-            if st.button("New Round", use_container_width=True):
-                st.session_state.view = 'round_input'
-                st.session_state.edit_round = None  # Clear edit mode
-                st.rerun()
-        with col_btn2:
-            if st.button("🔄 Refresh Now", use_container_width=True):
-                st.cache_data.clear()
-                st.rerun()
+        st.subheader("Next Dealer")
+        next_dealer_index = (dealer_index + 1) % 4
+        st.info(f"Next Dealer: {st.session_state.players[next_dealer_index]}")
         
-        # History with edit buttons
         if history:
             st.subheader("📊 Shared Round History")
             df = pd.DataFrame(history)
             st.dataframe(df, use_container_width=True)
-            st.subheader("Edit or Undo Rounds")
-            for i, round_data in enumerate(history):
-                if st.button(f"Edit Round {round_data['Round']}", key=f"edit_{i}", use_container_width=True):
+        
+        if is_readonly:
+            if st.button("🔄 Refresh Now", use_container_width=True):
+                st.cache_data.clear()
+                st.rerun()
+        else:
+            st.subheader("Actions")
+            col_btn1, col_btn2 = st.columns(2)
+            with col_btn1:
+                if st.button("New Round", use_container_width=True):
                     st.session_state.view = 'round_input'
-                    st.session_state.edit_round = i  # Store the index of the round to edit
+                    st.session_state.edit_round = None
                     st.rerun()
-            if st.button("↩️ Undo Last Round", use_container_width=True):
-                if history:
-                    last_round = history[-1]
-                    scores[st.session_state.team1] = max(0, scores.get(st.session_state.team1, 0) - last_round.get(st.session_state.team1, 0))
-                    scores[st.session_state.team2] = max(0, scores.get(st.session_state.team2, 0) - last_round.get(st.session_state.team2, 0))
-                    new_history = history[:-1]
-                    new_dealer_index = (dealer_index - 1) % 4
+            with col_btn2:
+                if st.button("🔄 Refresh Now", use_container_width=True):
+                    st.cache_data.clear()
+                    st.rerun()
+            
+            if history:
+                st.subheader("Edit or Undo Rounds")
+                for i, round_data in enumerate(history):
+                    if st.button(f"Edit Round {round_data['Round']}", key=f"edit_{i}", use_container_width=True):
+                        st.session_state.view = 'round_input'
+                        st.session_state.edit_round = i
+                        st.rerun()
+                if st.button("↩️ Undo Last Round", use_container_width=True):
+                    if history:
+                        last_round = history[-1]
+                        scores[st.session_state.team1] = max(0, scores.get(st.session_state.team1, 0) - last_round.get(st.session_state.team1, 0))
+                        scores[st.session_state.team2] = max(0, scores.get(st.session_state.team2, 0) - last_round.get(st.session_state.team2, 0))
+                        new_history = history[:-1]
+                        new_dealer_index = (dealer_index - 1) % 4
+                        update_firebase_data(game_path, {
+                            'scores': scores,
+                            'history': new_history,
+                            'dealer_index': new_dealer_index,
+                            'players': st.session_state.players,
+                            'team_names': [st.session_state.team1, st.session_state.team2]
+                        })
+                        st.success("Last round undone! Tell others to refresh.")
+                        st.rerun()
+        
+        max_score = max(scores.get(st.session_state.team1, 0), scores.get(st.session_state.team2, 0))
+        if max_score >= game_target:
+            winner = st.session_state.team1 if scores.get(st.session_state.team1, 0) >= scores.get(st.session_state.team2, 0) else st.session_state.team2
+            st.balloons()
+            st.success(f"🎉 {winner} wins with {max_score} points!")
+            if not is_readonly:
+                if st.button("New Game", use_container_width=True):
+                    update_firebase_data(game_path, {})
+                    st.session_state.view = 'setup'
+                    st.session_state.edit_round = None
+                    st.rerun()
+    
+    elif st.session_state.view == 'round_input' and not is_readonly:
+        is_edit_mode = st.session_state.edit_round is not None
+        round_num = history[st.session_state.edit_round]['Round'] if is_edit_mode else len(history) + 1
+        st.header(f"{'Edit Round' if is_edit_mode else 'Enter Round'} {round_num} Details")
+        
+        if is_edit_mode:
+            round_data = history[st.session_state.edit_round]
+            default_t1_score = round_data.get(st.session_state.team1, 0)
+            default_t2_score = round_data.get(st.session_state.team2, 0)
+            default_went_out = 'None'
+            default_concealed = False
+            default_dealing_bonus = False
+            default_meld1 = default_meld2 = 0
+            default_nat1 = default_nat2 = 0
+            default_mix1 = default_mix2 = 0
+            default_red1 = default_red2 = 0
+            default_penalty1 = default_penalty2 = 0
+        else:
+            default_went_out = 'None'
+            default_concealed = False
+            default_dealing_bonus = False
+            default_meld1 = default_meld2 = 0
+            default_nat1 = default_nat2 = 0
+            default_mix1 = default_mix2 = 0
+            default_red1 = default_red2 = 0
+            default_penalty1 = default_penalty2 = 0
+        
+        went_out = st.selectbox("Which team went out?", ['None', st.session_state.team1, st.session_state.team2], index=['None', st.session_state.team1, st.session_state.team2].index(default_went_out))
+        concealed = st.checkbox("Concealed hand? (+200 bonus)", value=default_concealed)
+        dealing_bonus = st.checkbox("Dealing Bonus? (+100 points)", value=default_dealing_bonus)
+        
+        col_a, col_b = st.columns(2)
+        with col_a:
+            st.subheader(st.session_state.team1)
+            meld1 = st.number_input("Meld points", min_value=0, value=default_meld1, key="meld1")
+            nat1 = st.selectbox("Natural Canastas", [0, 1, 2, 3, 4, 5], index=default_nat1, key="nat1")
+            mix1 = st.selectbox("Mixed Canastas", [0, 1, 2, 3, 4, 5], index=default_mix1, key="mix1")
+            red1 = st.selectbox("Red Threes (bonus cards)", [0, 1, 2, 3, 4], index=default_red1, key="red1")
+        with col_b:
+            st.subheader(st.session_state.team2)
+            meld2 = st.number_input("Meld points", min_value=0, value=default_meld2, key="meld2")
+            nat2 = st.selectbox("Natural Canastas", [0, 1, 2, 3, 4, 5], index=default_nat2, key="nat2")
+            mix2 = st.selectbox("Mixed Canastas", [0, 1, 2, 3, 4, 5], index=default_mix2, key="mix2")
+            red2 = st.selectbox("Red Threes (bonus cards)", [0, 1, 2, 3, 4], index=default_red2, key="red2")
+        
+        penalty1 = penalty2 = 0
+        if went_out == st.session_state.team1:
+            penalty2 = st.number_input(f"{st.session_state.team2} Penalty (hand cards)", min_value=0, value=default_penalty2)
+        elif went_out == st.session_state.team2:
+            penalty1 = st.number_input(f"{st.session_state.team1} Penalty (hand cards)", min_value=0, value=default_penalty1)
+        else:
+            penalty1 = st.number_input(f"{st.session_state.team1} Penalty (hand cards)", min_value=0, value=default_penalty1)
+            penalty2 = st.number_input(f"{st.session_state.team2} Penalty (hand cards)", min_value=0, value=default_penalty2)
+        
+        col_btn1, col_btn2 = st.columns(2)
+        with col_btn1:
+            if st.button(f"{'Save Changes' if is_edit_mode else 'Tally Round!'}", use_container_width=True):
+                total_red = red1 + red2
+                if total_red > 4:
+                    st.error("Total Red Threes (bonus cards) cannot exceed 4. Please adjust.")
+                else:
+                    t1_can_bonus = (nat1 * 500) + (mix1 * 300)
+                    t2_can_bonus = (nat2 * 500) + (mix2 * 300)
+                    t1_red_bonus = red1 * 100 if total_red != 4 else (800 if red1 == 4 else 0)
+                    t2_red_bonus = red2 * 100 if total_red != 4 else (800 if red2 == 4 else 0)
+                    go_bonus = 200 if concealed else 100
+                    t1_go = go_bonus if went_out == st.session_state.team1 else 0
+                    t2_go = go_bonus if went_out == st.session_state.team2 else 0
+                    dealer_team = st.session_state.team1 if dealer_index in [0, 2] else st.session_state.team2
+                    deal_bonus = 100 if dealing_bonus else 0
+                    t1_deal = deal_bonus if dealer_team == st.session_state.team1 else 0
+                    t2_deal = deal_bonus if dealer_team == st.session_state.team2 else 0
+                    
+                    t1_round = meld1 + t1_can_bonus + t1_red_bonus + t1_go + t1_deal - penalty1
+                    t2_round = meld2 + t2_can_bonus + t2_red_bonus + t2_go + t2_deal - penalty2
+                    
+                    if is_edit_mode:
+                        old_round = history[st.session_state.edit_round]
+                        scores[st.session_state.team1] = max(0, scores.get(st.session_state.team1, 0) - old_round.get(st.session_state.team1, 0))
+                        scores[st.session_state.team2] = max(0, scores.get(st.session_state.team2, 0) - old_round.get(st.session_state.team2, 0))
+                        history[st.session_state.edit_round] = {
+                            'Round': round_num,
+                            st.session_state.team1: t1_round,
+                            st.session_state.team2: t2_round,
+                            'Dealer': st.session_state.players[dealer_index]
+                        }
+                    else:
+                        history.append({
+                            'Round': len(history) + 1,
+                            st.session_state.team1: t1_round,
+                            st.session_state.team2: t2_round,
+                            'Dealer': st.session_state.players[dealer_index]
+                        })
+                    
+                    scores[st.session_state.team1] = scores.get(st.session_state.team1, 0) + t1_round
+                    scores[st.session_state.team2] = scores.get(st.session_state.team2, 0) + t2_round
+                    
                     update_firebase_data(game_path, {
                         'scores': scores,
-                        'history': new_history,
-                        'dealer_index': new_dealer_index,
+                        'history': history,
+                        'dealer_index': dealer_index if is_edit_mode else (dealer_index + 1) % 4,
                         'players': st.session_state.players,
                         'team_names': [st.session_state.team1, st.session_state.team2]
                     })
-                    st.success("Last round undone! Tell others to refresh.")
+                    
+                    st.success(f"{'Round updated' if is_edit_mode else 'Scores updated'}! Tell others to refresh.")
+                    st.session_state.view = 'summary'
+                    st.session_state.edit_round = None
                     st.rerun()
-        
-        # Win check
-        max_score = max(scores.get(st.session_state.team1, 0), scores.get(st.session_state.team2, 0))
+        with col_btn2:
+            if st.button("Cancel", use_container_width=True):
+                st.session_state.view = 'summary'
+                st.session_state.edit_round = None
+                st.rerun()
+
+# Rules with updated details
+with st.expander("ℹ️ Quick Rules Reminder"):
+    st.markdown("""
+    - **Game Setup**:
+      - Two decks of cards (including jokers) are used.
+      - Each player is dealt 11 cards at the start of a round.
+      - Each player picks up one card per turn.
+    - **Minimum Meld to Go Down**:
+      - Start of game: 50 points
+      - Team score 1500+: 90 points
+      - Team score 3000+: 120 points
+    - **Meld Points**: Jokers=50, A/2=20, K-8=10, 7-4=5.
+    - **Canastas**: Natural=500, Mixed=300.
+    - **Red Threes (bonus cards)**: 100 each; 800 if all 4 to one team (total Red Threes cannot exceed 4).
+    - **Going Out**: +100 (or +200 concealed).
+    - **Dealing Bonus**: +100 points if the dealer picks exactly 11 cards per player.
+    - **Editing Rounds**: Host can use "Edit Round" buttons in the history table to modify previous rounds.
+    - **Penalties**: Value of unmelded cards.
+    Game ends at 5,000 points. Share the read-only link to follow scores!
+    """)
