@@ -28,6 +28,8 @@ if 'players' not in st.session_state:
     st.session_state.players = ["Player 1", "Player 2", "Player 3", "Player 4"]
 if 'edit_round' not in st.session_state:
     st.session_state.edit_round = None  # Track which round is being edited
+if 'app_url' not in st.session_state:
+    st.session_state.app_url = 'yourapp.streamlit.app'  # Replace with your actual Streamlit app URL
 
 # Check for read-only mode via URL parameter
 query_params = st.query_params
@@ -117,7 +119,7 @@ if st.session_state.view == 'setup' and not is_readonly:
             st.session_state.game_id = game_id_input
             st.session_state.view = 'summary'
             st.rerun()
-    st.markdown(f"**Share read-only link with others**: {st.session_state.get('app_url', 'yourapp.streamlit.app')}?view=readonly&game_id={game_id_input or 'your-game-id'}")
+    st.markdown(f"**Share read-only link with others**: {st.session_state.app_url}?view=readonly&game_id={game_id_input or 'your-game-id'}")
 
 else:
     game_path = st.session_state.game_id.replace('/', '-')
@@ -266,7 +268,7 @@ else:
             penalty1 = st.number_input(f"{st.session_state.team1} Penalty (hand cards)", min_value=0, value=default_penalty1)
             penalty2 = st.number_input(f"{st.session_state.team2} Penalty (hand cards)", min_value=0, value=default_penalty2)
         
-        col_btn1, col_btn2 = st.columns(2)
+        col_btn1, col_btn2, col_btn3 = st.columns(3)
         with col_btn1:
             if st.button(f"{'Save Changes' if is_edit_mode else 'Tally Round!'}", use_container_width=True):
                 total_red = red1 + red2
@@ -326,6 +328,11 @@ else:
                 st.session_state.view = 'summary'
                 st.session_state.edit_round = None
                 st.rerun()
+        with col_btn3:
+            readonly_link = f"{st.session_state.app_url}?view=readonly&game_id={st.session_state.game_id}"
+            if st.button("📤 Share Read-Only Link", use_container_width=True):
+                st.markdown(f"**Copy this link**: [{readonly_link}]({readonly_link})")
+                st.info("Tap the link to copy or share it via Messages, WhatsApp, etc.")
 
 # Rules with updated details
 with st.expander("ℹ️ Quick Rules Reminder"):
